@@ -1,152 +1,116 @@
-import pandas as pd
-import PyPDF2
-from typing import Dict, Any, List
 import io
-import numpy as np
+import csv
+from typing import Dict, Any, List
+from collections import defaultdict
+import PyPDF2
+
 
 class DocumentProcessor:
-    """Handle document uploads and data extraction"""
-    
+    """Handle document uploads and data extraction (pandas-free)"""
+
     @staticmethod
-    def process_csv(file_content: bytes) -> pd.DataFrame:
-        """Process CSV file"""
-        return pd.read_csv(io.BytesIO(file_content))
-    
-    @staticmethod
-    def process_xlsx(file_content: bytes) -> Dict[str, pd.DataFrame]:
-        """Process Excel file"""
-        excel_file = pd.ExcelFile(io.BytesIO(file_content))
-        sheets = {}
-        for sheet_name in excel_file.sheet_names:
-            sheets[sheet_name] = pd.read_excel(io.BytesIO(file_content), sheet_name=sheet_name)
-        return sheets
-    
+    def process_csv(file_content: bytes) -> List[Dict[str, Any]]:
+        """Parse CSV into list of dictionaries"""
+        text = file_content.decode("utf-8", errors="ignore")
+        reader = csv.DictReader(io.StringIO(text))
+        return [row for row in reader]
+
     @staticmethod
     def process_pdf(file_content: bytes) -> str:
         """Extract text from PDF"""
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
-        return text
-    
+        reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+
     @staticmethod
     def safe_numeric(value) -> float:
-        """Safely convert value to numeric"""
-        if pd.isna(value):
-            return 0
+        """Safely convert value to float"""
+        if value is None:
+            return 0.0
         if isinstance(value, (int, float)):
             return float(value)
         if isinstance(value, str):
             try:
-                # Remove common currency symbols and commas
-                cleaned = value.replace('$', '').replace(',', '').replace('₹', '').strip()
+                cleaned = (
+                    value.replace(",", "")
+                    .replace("$", "")
+                    .replace("₹", "")
+                    .strip()
+                )
                 return float(cleaned)
-            except (ValueError, AttributeError):
-                return 0
-        return 0
-    
+            except ValueError:
+                return 0.0
+        return 0.0
+
     @staticmethod
-    def extract_financial_data(df: pd.DataFrame) -> Dict[str, Any]:
-        """Extract financial metrics from dataframe"""
-        financial_data = {}
-        
-        # Common column name variations
-        revenue_cols = ["revenue", "sales", "total_revenue", "gross_revenue", "income"]
-        expense_cols = ["expenses", "total_expenses", "operating_expenses", "costs"]
-        profit_cols = ["net_profit", "profit", "net_income", "earnings", "net earnings"]
-        
-        # Convert all numeric columns
-        for col in df.columns:
-            col_lower = col.lower().strip()
-            
-            # Try to convert column to numeric
-            try:
-                numeric_col = pd.to_numeric(df[col], errors='coerce')
-                col_sum = numeric_col.sum()
-                
-                if pd.isna(col_sum):
-                    continue
-                
-                col_sum = float(col_sum)
-                
-                if col_lower in revenue_cols:
-                    financial_data["revenue"] = col_sum
-                elif col_lower in expense_cols:
-                    financial_data["expenses"] = col_sum
-                elif col_lower in profit_cols:
-                    financial_data["net_profit"] = col_sum
-                elif "receivable" in col_lower:
-                    financial_data["accounts_receivable"] = col_sum
-                elif "payable" in col_lower:
-                    financial_data["accounts_payable"] = col_sum
-                elif "inventory" in col_lower:
-                    financial_data["inventory"] = col_sum
-                elif "asset" in col_lower:
-                    financial_data["total_assets"] = col_sum
-                elif "liability" in col_lower:
-                    financial_data["total_liabilities"] = col_sum
-                elif "equity" in col_lower or "capital" in col_lower:
-                    financial_data["equity"] = col_sum
-            except:
-                continue
-        
-        # Calculate missing values
-        if "revenue" in financial_data and "expenses" in financial_data:
-            if "net_profit" not in financial_data:
-                financial_data["net_profit"] = financial_data["revenue"] - financial_data["expenses"]
-        
-        if "total_assets" not in financial_data and "total_liabilities" in financial_data and "equity" in financial_data:
-            financial_data["total_assets"] = financial_data["total_liabilities"] + financial_data["equity"]
-        
-        # Ensure all values are numeric
-        for key in financial_data:
-            financial_data[key] = DocumentProcessor.safe_numeric(financial_data[key])
-        
-        return financial_data
-    
+    def extract_financial_data(rows: List[Dict[str, Any]]) -> Dict[str, float]:
+        """Extract financial metrics from CSV rows"""
+        totals = defaultdict(float)
+
+        revenue_keys = {"revenue", "sales", "income"}
+        expense_keys = {"expense", "cost"}
+        profit_keys = {"profit", "net_income"}
+
+        for row in rows:
+            for key, value in row.items():
+                key_l = key.lower().strip()
+                amount = DocumentProcessor.safe_numeric(value)
+
+                if any(k in key_l for k in revenue_keys):
+                    totals["revenue"] += amount
+                elif any(k in key_l for k in expense_keys):
+                    totals["expenses"] += amount
+                elif any(k in key_l for k in profit_keys):
+                    totals["net_profit"] += amount
+                elif "receivable" in key_l:
+                    totals["accounts_receivable"] += amount
+                elif "payable" in key_l:
+                    totals["accounts_payable"] += amount
+                elif "inventory" in key_l:
+                    totals["inventory"] += amount
+                elif "asset" in key_l:
+                    totals["total_assets"] += amount
+                elif "liability" in key_l:
+                    totals["total_liabilities"] += amount
+                elif "equity" in key_l or "capital" in key_l:
+                    totals["equity"] += amount
+
+        # Derivations
+        if "net_profit" not in totals and "revenue" in totals and "expenses" in totals:
+            totals["net_profit"] = totals["revenue"] - totals["expenses"]
+
+        if "total_assets" not in totals and "total_liabilities" in totals and "equity" in totals:
+            totals["total_assets"] = totals["total_liabilities"] + totals["equity"]
+
+        return dict(totals)
+
     @staticmethod
-    def categorize_expenses(df: pd.DataFrame) -> Dict[str, float]:
-        """Categorize expenses by type"""
-        categories = {}
-        
-        expense_categories = {
-            "salaries": ["salary", "wages", "payroll", "compensation", "employee"],
-            "rent": ["rent", "lease", "facility", "premises"],
-            "utilities": ["electricity", "water", "gas", "utility", "power"],
-            "marketing": ["marketing", "advertising", "promotion", "ads"],
-            "supplies": ["supplies", "materials", "inventory", "stock"],
-            "maintenance": ["maintenance", "repair", "service", "upkeep"],
-            "transportation": ["transport", "shipping", "logistics", "delivery"],
-            "other": []
+    def categorize_expenses(rows: List[Dict[str, Any]]) -> Dict[str, float]:
+        """Categorize expenses using column names"""
+        categories = defaultdict(float)
+
+        mapping = {
+            "salaries": ["salary", "wages", "payroll"],
+            "rent": ["rent", "lease"],
+            "utilities": ["electricity", "water", "gas"],
+            "marketing": ["marketing", "ads", "promotion"],
+            "supplies": ["supplies", "materials", "inventory"],
+            "maintenance": ["maintenance", "repair"],
+            "transportation": ["transport", "shipping", "logistics"],
         }
-        
-        for col in df.columns:
-            col_lower = col.lower()
-            
-            # Skip non-numeric columns
-            try:
-                numeric_col = pd.to_numeric(df[col], errors='coerce')
-                if numeric_col.isna().all():
-                    continue
-                col_sum = numeric_col.sum()
-                if pd.isna(col_sum):
-                    continue
-                col_sum = float(col_sum)
-            except:
-                continue
-            
-            categorized = False
-            
-            for category, keywords in expense_categories.items():
-                if category != "other":
-                    for keyword in keywords:
-                        if keyword in col_lower:
-                            categories[category] = categories.get(category, 0) + col_sum
-                            categorized = True
-                            break
-            
-            if not categorized and ("expense" in col_lower or "cost" in col_lower):
-                categories["other"] = categories.get("other", 0) + col_sum
-        
-        return categories
+
+        for row in rows:
+            for key, value in row.items():
+                key_l = key.lower()
+                amount = DocumentProcessor.safe_numeric(value)
+
+                matched = False
+                for category, keywords in mapping.items():
+                    if any(word in key_l for word in keywords):
+                        categories[category] += amount
+                        matched = True
+                        break
+
+                if not matched and ("expense" in key_l or "cost" in key_l):
+                    categories["other"] += amount
+
+        return dict(categories)
