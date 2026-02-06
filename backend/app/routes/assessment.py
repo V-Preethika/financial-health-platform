@@ -5,8 +5,8 @@ from ..services.financial_analyzer import FinancialAnalyzer
 from ..services.translator import Translator
 from ..services.pdf_generator import PDFReportGenerator
 
-from .database import get_db
-from .security import verify_token
+from ..database import get_db
+from ..security import verify_token
 from typing import Dict, Any, Optional
 from datetime import datetime
 from fastapi.responses import StreamingResponse
