@@ -2,8 +2,8 @@ from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from ..models import FinancialData, Business, User
 from ..services.document_processor import DocumentProcessor
-from .database import get_db
-from .security import verify_token
+from ..database import get_db
+from ..security import verify_token
 from typing import Dict, Any, Optional
 import json
 

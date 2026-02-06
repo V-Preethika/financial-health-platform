@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..models import Business, BusinessType, User
-from .database import get_db
-from .security import verify_token
+from ..database import get_db
+from ..security import verify_token
 from typing import Dict, Any, List, Optional
 
 router = APIRouter(prefix="/api/businesses", tags=["businesses"])
