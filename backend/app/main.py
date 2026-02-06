@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.config import settings
-from app.routes import business, assessment, upload, auth
+from .config import settings
+from .routes import business, assessment, upload, auth
 
 #app = FastAPI(title=settings.app_name)
 app = FastAPI()

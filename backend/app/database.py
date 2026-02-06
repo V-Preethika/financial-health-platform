@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from app.config import settings
-from app.models import Base
+from .config import settings
+from .models import Base
 
 # Create database engine with connection pooling
 try:
